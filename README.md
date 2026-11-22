@@ -1,0 +1,64 @@
+# 🚀 Space Launches Data Lakehouse (Medallion Architecture)
+
+Сквозной конвейер обработки данных (Data Engineering), который забирает данные о запусках из публичного *TheSpaceDevs API* и обрабатывает их через Медальонную архитектуру (Bronze → Silver → Gold), используя современный стек Data Lakehouse.
+
+<img width="2048" height="2048" alt="nano-banana-pro-1795367673020" src="https://github.com/user-attachments/assets/032b476e-2674-4086-b0c1-55fe65c96ccd" />
+
+
+## 🎯 Бизнес-проблема
+Публичные API часто отдают нестабильные, непроверенные данные, имеют лимиты на запросы (rate limits) и периодически падают. Аналитикам нужен надежный, идемпотентный пайплайн, который доставляет чистые, агрегированные данные для дашбордов без ручного вмешательства и без риска появления дублей.
+
+## 🛠 Технологический стек
+- **Оркестрация:** Apache Airflow (LocalExecutor)
+- **Обработка:** Apache Spark (PySpark)
+- **Хранение:** MinIO (S3-совместимый) и Apache Iceberg (формат таблиц)
+- **Движок запросов:** Trino (Федеративные SQL-запросы)
+- **Слой витрин (OLAP):** ClickHouse (движок ReplacingMergeTree)
+- **Инфраструктура:** Docker Compose
+
+## ✨ Ключевые инженерные решения
+1. **Идемпотентность:** Слой Silver использует `DELETE + INSERT` с партиционированием по `load_date` в Iceberg. Если запустить пайплайн несколько раз за одну и ту же дату, данные не задублируются.
+2. **Отказоустойчивость:** Если API возвращает пустой ответ (например, в этот день не было запусков ракет), Airflow не падает с ошибкой. Выбрасывается `AirflowSkipException`, и задача помечается как *Skipped* (Пропущена), что предотвращает ложные алерты.
+3. **Дедупликация:** На слое Silver применяется `dropDuplicates(["id"])` для защиты от сбоев API.
+4. **Агрегация на слое Gold:** В ClickHouse используется `ReplacingMergeTree`, чтобы автоматически удалять дубликаты агрегатов во время фоновых слияний (merges).
+5. **Безопасность:** Все пароли и ключи передаются через переменные окружения (`.env`). В коде нет захардкоженных секретов.
+
+## 🚀 Быстрый старт
+
+1. **Клонируйте репозиторий:**
+   ```bash
+   git clone https://github.com/anton-bobrov-de/space-launches-lakehouse.git
+   cd space-launches-lakehouse
+   ```
+
+2. **Настройте окружение:**
+   ```bash
+   cp .env.example .env
+   # (Опционально) Отредактируйте .env, если хотите изменить пароли
+   ```
+
+3. **Запустите инфраструктуру:**
+   ```bash
+   docker-compose up -d
+   ```
+   *Дождитесь инициализации Airflow (следите за логами через `docker-compose logs -f airflow-webserver`).*
+
+4. **Запустите пайплайн:**
+   - Откройте веб-интерфейс Airflow по адресу `http://localhost:8090` (логин: `admin`, пароль: `admin`).
+   - Снимите с паузы (Unpause) и запустите DAG `kenz0kenz_api_to_bronze`.
+   - После его успешного завершения запустите `kenz0kenz_bronze_to_silver`, а затем `kenz0kenz_silver_to_gold`.
+
+5. **Проверьте результаты в Trino / Jupyter:**
+   - Откройте Jupyter по адресу `http://localhost:8888`.
+   - Перейдите в `work/Join_CH_ICEBERG.ipynb`, чтобы выполнить федеративный запрос, соединяющий данные из Iceberg (Silver) и ClickHouse (Gold).
+
+## 📂 Структура проекта
+```text
+├── dags/               # DAG-и Airflow
+├── spark_jobs/         # Скрипты трансформации на PySpark
+├── lib/                # Общие утилиты Python (клиент API, работа с S3)
+├── trino/              # Конфигурации каталогов Trino (Iceberg, ClickHouse, Postgres)
+├── docker/             # Dockerfile и requirements для Airflow
+├── work/               # Jupyter-ноутбуки для аналитики
+├── .env.example        # Шаблон переменных окружения
+└── docker-compose.yml  # Главный файл инфраструктуры
