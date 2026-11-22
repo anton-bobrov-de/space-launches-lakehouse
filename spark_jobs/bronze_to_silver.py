@@ -1,9 +1,6 @@
-"""
-Spark-job: читает bronze parquet из S3, чистит и пишет в Iceberg silver.launches.
-"""
-
 import logging
 import sys
+import os
 
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
@@ -16,10 +13,11 @@ SILVER_NAMESPACE = "silver"
 SILVER_TABLE = f"{CATALOG}.{SILVER_NAMESPACE}.launches"
 BRONZE_PATH = "s3a://lakehouse/bronze/launches"
 
-MINIO_USER = "minioadmin"
-MINIO_PASSWORD = "minioadmin"
-MINIO_ENDPOINT = "http://minio:9000"
-ICEBERG_REST_URI = "http://iceberg-rest:8181"
+# Берем креды из окружения
+MINIO_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
+ICEBERG_REST_URI = os.getenv("ICEBERG_REST_URI", "http://iceberg-rest:8181")
 
 
 def build_spark() -> SparkSession:
@@ -117,12 +115,9 @@ def main(load_date: str) -> None:
             raise e
 
     logger.info("Bronze rows: %d", bronze_df.count())
-
     silver_df = transform(bronze_df)
 
     # === ДЕДУПЛИКАЦИЯ ===
-    # Оставляем только уникальные записи по id.
-    # Это защитит от дублей, если API отдал одну и ту же миссию дважды.
     silver_df = silver_df.dropDuplicates(["id"])
 
     # Идемпотентность: удаляем партицию за дату перед вставкой

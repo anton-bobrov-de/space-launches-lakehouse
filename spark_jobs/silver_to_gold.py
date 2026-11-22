@@ -1,10 +1,6 @@
-"""
-Spark-job: читает silver.launches из Iceberg, считает агрегаты за конкретную дату,
-пишет в ClickHouse (база gold) инкрементально.
-"""
-
 import logging
 import sys
+import os
 
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
@@ -15,16 +11,16 @@ logger = logging.getLogger(__name__)
 CATALOG = "iceberg"
 SILVER_TABLE = f"{CATALOG}.silver.launches"
 
-MINIO_USER = "minioadmin"
-MINIO_PASSWORD = "minioadmin"
-MINIO_ENDPOINT = "http://minio:9000"
-ICEBERG_REST_URI = "http://iceberg-rest:8181"
+MINIO_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
+ICEBERG_REST_URI = os.getenv("ICEBERG_REST_URI", "http://iceberg-rest:8181")
 
-CLICKHOUSE_HOST = "host.docker.internal"
-CLICKHOUSE_PORT = "8125"
-CLICKHOUSE_DB = "gold"
-CLICKHOUSE_USER = "default"
-CLICKHOUSE_PASSWORD = ""
+CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "host.docker.internal")
+CLICKHOUSE_PORT = os.getenv("CLICKHOUSE_PORT", "8125")
+CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "gold")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
 
 JDBC_URL = f"jdbc:clickhouse://{CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}/{CLICKHOUSE_DB}"
 JDBC_DRIVER = "com.clickhouse.jdbc.ClickHouseDriver"
@@ -54,7 +50,6 @@ def build_spark() -> SparkSession:
 
 
 def write_clickhouse(df, table: str) -> None:
-    """Просто пишет DataFrame в ClickHouse. Дедупликация на стороне CH."""
     logger.info("Writing %d rows to gold.%s", df.count(), table)
     (
         df.write.format("jdbc")
@@ -73,10 +68,8 @@ def main(load_date: str) -> None:
     logger.info("Starting INCREMENTAL silver_to_gold for %s", load_date)
     spark = build_spark()
 
-    # 1. Читаем ТОЛЬКО нужную партицию из Iceberg
     logger.info("Reading partition load_date=%s from %s", load_date, SILVER_TABLE)
     silver_df = spark.read.table(SILVER_TABLE).filter(F.col("load_date") == load_date)
-
     row_count = silver_df.count()
     logger.info("Silver rows for %s: %d", load_date, row_count)
 
@@ -85,16 +78,14 @@ def main(load_date: str) -> None:
         spark.stop()
         return
 
-    # Добавляем колонку-версию для ReplacingMergeTree
     silver_df = silver_df.withColumn("processed_at", F.current_timestamp())
 
-    # 2. Считаем агрегаты
     by_country = (
         silver_df.withColumn(
             "country", F.split(F.col("pad_location_name"), ",").getItem(F.lit(1))
         )
         .withColumn("country", F.trim(F.col("country")))
-        .groupBy(F.col("load_date").alias("launch_date"), "country")  # <--- ИСПРАВЛЕНО
+        .groupBy(F.col("load_date").alias("launch_date"), "country")
         .agg(
             F.count("*").alias("launches_count"),
             F.max("processed_at").alias("processed_at"),
@@ -103,9 +94,7 @@ def main(load_date: str) -> None:
     )
 
     rocket_stats = (
-        silver_df.groupBy(
-            F.col("load_date").alias("launch_date"), "rocket_name"
-        )  # <--- ИСПРАВЛЕНО
+        silver_df.groupBy(F.col("load_date").alias("launch_date"), "rocket_name")
         .agg(
             F.count("*").alias("total_launches"),
             F.sum(F.when(F.col("status_abbrev") == "Success", 1).otherwise(0)).alias(
@@ -124,9 +113,7 @@ def main(load_date: str) -> None:
     )
 
     agencies = (
-        silver_df.groupBy(
-            F.col("load_date").alias("launch_date"), "provider_name"
-        )  # <--- ИСПРАВЛЕНО
+        silver_df.groupBy(F.col("load_date").alias("launch_date"), "provider_name")
         .agg(
             F.count("*").alias("launches_count"),
             F.max("processed_at").alias("processed_at"),
@@ -134,7 +121,6 @@ def main(load_date: str) -> None:
         .filter(F.col("provider_name").isNotNull())
     )
 
-    # 3. Просто пишем в ClickHouse (append)
     write_clickhouse(by_country, "launches_by_country_day")
     write_clickhouse(rocket_stats, "rocket_success_rate")
     write_clickhouse(agencies, "agency_top_10")

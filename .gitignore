@@ -2,14 +2,32 @@
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+.venv/
+venv/
+
+# Секреты и окружение
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 
 # Airflow
 logs/
 airflow-logs/
+airflow.db
+webserver_config.py
 
-# Docker
-# (volumes хранятся вне папки, так что тут чисто)
+# Данные и артефакты
+data/
+*.parquet
+*.csv
+*.json.gz
+work/
+minio-data/
+airflow-db-data/
 
-# Jupyter
-work/.ipynb_checkpoints/
+# IDE
+.vscode/
+.idea/
+.DS_Store

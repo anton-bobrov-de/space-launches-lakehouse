@@ -2,6 +2,7 @@
 Клиент для thespacedevs API.
 Тянет данные о запусках ракет за конкретную дату.
 """
+
 import logging
 import time
 from datetime import datetime, timezone
@@ -14,7 +15,9 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://ll.thespacedevs.com/2.3.0/launches/"
 
 
-def fetch_launches(load_date: str, limit: int = 100, max_retries: int = 3) -> pd.DataFrame:
+def fetch_launches(
+    load_date: str, limit: int = 100, max_retries: int = 3
+) -> pd.DataFrame:
     """
     Загружает запуски за указанную дату.
 

@@ -7,23 +7,20 @@ x-airflow-common: &airflow-common
       condition: service_healthy
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airflow-postgres/airflow
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
     AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
-    MINIO_ROOT_USER: minioadmin
-    MINIO_ROOT_PASSWORD: minioadmin
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     AWS_REGION: us-east-1
-    AIRFLOW_CONN_MINIOS3_CONN: "aws://minioadmin:minioadmin@?endpoint_url=http%3A%2F%2Fminio%3A9000"
-    CLICKHOUSE_HOST: host.docker.internal
-    CLICKHOUSE_PORT: '8125'
-    POSTGRES_HOST: host.docker.internal
-    POSTGRES_PORT: '5432'
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: postgres
-    AIRFLOW__WEBSERVER__SHOW_TRIGGER_FORM_IF_NO_PARAMS: 'true'
+    AIRFLOW_CONN_MINIOS3_CONN: "aws://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@?endpoint_url=http%3A%2F%2Fminio%3A9000"
+    CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
+    CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
+    POSTGRES_HOST: ${CLICKHOUSE_HOST} # если Postgres в том же контейнере
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
   volumes: &airflow-volumes
     - ./dags:/opt/airflow/dags
     - ./spark_jobs:/opt/airflow/spark_jobs
@@ -34,7 +31,6 @@ x-airflow-common: &airflow-common
     - "host.docker.internal:host-gateway"
 
 services:
-
   # ─────────────────────────── Storage ───────────────────────────
   minio:
     image: pgsty/silo:latest
@@ -43,8 +39,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
@@ -55,7 +51,7 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do
         echo 'waiting for minio';
         sleep 2;
       done;
@@ -76,12 +72,12 @@ services:
       CATALOG_WAREHOUSE: s3://lakehouse
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
-      CATALOG_S3_ACCESS__KEY__ID: minioadmin
-      CATALOG_S3_SECRET__ACCESS__KEY: minioadmin
+      CATALOG_S3_ACCESS__KEY__ID: ${MINIO_ROOT_USER}
+      CATALOG_S3_SECRET__ACCESS__KEY: ${MINIO_ROOT_PASSWORD}
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
       CATALOG_S3_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       AWS_REGION: us-east-1
 
   # ─────────────────────────── Query engine ──────────────────────
@@ -94,12 +90,12 @@ services:
       - "8888:8888"
       - "4040:4040"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       AWS_REGION: us-east-1
       JUPYTER_ENABLE_LAB: "yes"
       TRINO_URL: http://trino:8080
-      TRINO_USER: jupyter
+      TRINO_USER: ${TRINO_USER}
     volumes:
       - ./work:/home/jovyan/work
     command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
@@ -111,6 +107,11 @@ services:
       - iceberg-rest
     ports:
       - "8085:8080"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     volumes:
       - ./trino/etc:/etc/trino
       - ./trino/catalog:/etc/trino/catalog
@@ -122,13 +123,13 @@ services:
     image: postgres:16
     container_name: airflow-postgres
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: airflow
     volumes:
       - airflow-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 5s
       retries: 10
 
