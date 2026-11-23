@@ -2,7 +2,7 @@
 
 Сквозной конвейер обработки данных (Data Engineering), который забирает данные о запусках из публичного *TheSpaceDevs API* и обрабатывает их через Медальонную архитектуру (Bronze → Silver → Gold), используя современный стек Data Lakehouse.
 
-![Uploading nano-banana-pro-1795367673020.jpg…]()
+<img width="2048" height="2048" alt="nano-banana-pro-1795367673020" src="https://github.com/user-attachments/assets/9b0e2cc8-fcad-4cbe-a4e8-68d939777bee" />
 
 
 ## 🎯 Бизнес-проблема
