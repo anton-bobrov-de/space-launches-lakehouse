@@ -65,6 +65,7 @@
 ├── spark_jobs/         # Скрипты трансформации на PySpark
 ├── lib/                # Общие утилиты Python (клиент API, работа с S3)
 ├── trino/              # Конфигурации каталогов Trino (Iceberg, ClickHouse, Postgres)
+├── clickhouse/         # DDL-скрипты для создания таблиц в ClickHouse
 ├── docker/             # Dockerfile и requirements для Airflow
 ├── work/               # Jupyter-ноутбуки для аналитики
 ├── .env.example        # Шаблон переменных окружения
